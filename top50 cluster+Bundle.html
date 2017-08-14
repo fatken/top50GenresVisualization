@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<style type="text/css">
+		.link {
+			fill:none;
+			stroke-opacity:0.5;
+			stroke-width:1px;
+			stroke: steelblue;
+		}
+
+		.linkHover {
+			fill:none;
+			stroke-opacity:1;
+			stroke-width:1.5px;
+			stroke:red;
+		}
+
+		text{
+			font-family: sans-serif;
+			font-size: 10px;
+		}
+
+		.tooltip{
+	        font-family: sans-serif;
+	        font-size: 14px;
+	        max-width: 300px;
+	        padding: 10px 20px;
+	        display: block;
+	        height: auto;
+	        position: absolute;
+	        text-align: center;
+	        border-style:solid;
+	        border-width: 1px;
+	        background-color: white;
+	        border-radius: 5px;
+		}
+	</style>
+	<title></title>
+</head>
+<body>
+	<div id = 'bundleLayout'></div>
+
+	<script src="https://d3js.org/d3.v3.js"></script>
+
+	<script type="text/javascript">
+
+		
+		d3.json('nodes.json', function(games){
+			d3.json('relations.json', function(relations){
+
+				games.children.sort(function(a, b){
+					if (a.category == b.category && a.category == 'game'){
+						return b.GPS - a.GPS;
+					}
+					else if (a.category == b.category && a.category == 'primary'){
+						return a.gamesCount - b.gamesCount;
+					}
+					else if (a.category == b.category && a.category == 'secondary'){
+						return a.gamesCount - b.gamesCount;
+					}
+				});
+
+
+				var width = 800;
+				var height = 800;
+				var r = width/2 - 150;
+
+				//color gradient 
+				var purple = d3.hsl(233,1, 0.6);//, 0.8
+				var red = d3.hsl(360, 1, 0.6);//, 0.8
+				var green = d3.hsl(140, 1, 0.6);//, 0.8
+
+				var svg = d3.select('#bundleLayout')
+					.append('svg')
+					.attr('width', width)
+					.attr('height', height);
+
+				//data conversion/layout setup
+				var cluster = d3.layout.cluster()
+					.size([360, r])
+					.separation(function(a, b){
+						return (a.category == b.category ? 1: 2 )/ a.depth;
+					});
+
+				//setting conversion functions
+				var nodes = cluster.nodes(games);
+				var bundle = d3.layout.bundle();
+
+				var nodeWidth = (r * 2 * Math.PI / nodes.length) - 6;
+
+				//blue(240, 100, 44)
+				//green(120, 100, 39)
+				//red(0, 100, 54)
+
+				var colorTipJson = [{"x": width/15, "y": height/15, "width": 30, "height": nodeWidth, "fill": 'hsla(240, 100%, 44%, 0.9)', "text": "Game"},
+   		  {"x": width/15, "y": height/15 + 15, "width": 30, "height": nodeWidth, "fill": 'hsla(0, 100%, 54%, 0.9)', "text": "Secondary genre"}, 
+   		  {"x": width/15, "y": height/15 + 30, "width": 30, "height": nodeWidth, "fill": 'hsla(120, 100%, 39%, 0.9)', "text": "Primary genre"}];
+
+			   	var lightnessTipJson = [{"GPS": 60, "x": width - width/15 - 70, "y": height/15, "width": 30, "height": nodeWidth},
+			   							{"GPS": 80, "x": width - width/15 - 35, "y": height/15, "width": 30, "height": nodeWidth},
+			   							{"GPS": 100, "x": width - width/15, "y": height/15, "width": 30, "height": nodeWidth}
+			   							];
+
+
+
+				var oLinks = map(nodes, relations);
+				var links = bundle(oLinks);
+
+				//test plotting nodes generated from cluster layout
+
+				function map(nodes, relations){
+					var hash = [];
+					var resultLinks = [];
+
+					for(var i = 0; i < nodes.length; i ++){
+						hash[nodes[i].name] = nodes[i];
+					}
+					for(var i = 0; i < relations.length; i ++){
+						resultLinks.push({
+							source:hash[relations[i].source],
+							target:hash[relations[i].target],
+						});
+					}
+					return resultLinks;
+				}
+
+				//drawing
+				var line = d3.svg.line.radial()
+					.interpolate('bundle')
+					.tension(0.85)
+					.radius(function(d) {return d.y;})
+					.angle(function(d){return d.x/180 * Math.PI;});
+
+				var gBundle = svg.append('g')
+					.attr('transform', 'translate(' + (width/2) + ', ' + (height/2) + ')');
+
+				var link = gBundle.selectAll('.link')
+					.data(links)
+					.enter()
+					.append('path')
+					.attr('class', 'link')
+					.attr('d', line)
+					;
+
+				var node = gBundle.selectAll('.node')
+					.data(nodes.filter(function(d){
+						return !d.children;
+					}))
+					.enter()
+					.append('g')
+					.attr('class','node')
+					.attr('transform', function(d){
+						return 'rotate(' + (d.x - 90) + ')translate(' + d.y + ')' + 'rotate(' + (90 - d.x) + ')';
+					});
+
+				//append GPS rect for games
+
+				node.append('rect')
+					.attr('class', 'rectangles')
+					.attr('width', nodeWidth)
+					.attr('height', function(d){
+						if(d.GPS){
+							return d.GPS/5;
+						}
+						else if(d.gamesCount){
+							return d.gamesCount * 2;
+						}
+						else{
+							return 0;
+						}
+					})
+					.style('fill', function(d){
+						if(d.GPS){
+							return 'hsla(240, 100%, ' + (144 - d.GPS) + '%, 0.9)'; // blue, 240, 100, 44
+							//return 'hsla(' + (160  + d.GPS) + ', 100%, 50%, 0.8)';//' + (d.GPS - 60)/100 + '
+						}
+						else if(d.category == 'primary'){
+							return 'hsla(120, 100%, ' + (54 - d.gamesCount * 2) + '%, 0.9)';
+						}
+						else{// red 0, 100, 54
+							return 'hsla(0, 100%, ' + (54 - d.gamesCount * 2) + '%, 0.9)';
+						}
+					})
+					.attr('transform', function(d){
+						return 'rotate(' + ( d.x + 180) + ')translate(-' + nodeWidth/2 + ', 2)';
+					});
+
+				//append text
+				node.append('text')
+					.attr('dy', '.2em')
+					.attr('transform', function(d){
+						if(d.GPS){
+							return 'rotate(' + (d.x < 180? d.x - 90: d.x + 90) + ')translate(' + (d.x < 180 ? (d.GPS/5) + 5: -(d.GPS/5 + 5 )) + ', 2)';
+						}
+						else if(d.gamesCount){
+							return 'rotate(' + (d.x < 180? d.x - 90: d.x + 90) + ')translate(-' + (d.gamesCount * 2 + 5) + ', 2)';
+						}
+						else{
+							return 'rotate(' + (d.x < 180? d.x - 90: d.x + 90) + ')';
+						}
+					})
+					.attr("text-anchor", function(d) { return d.x < 180 ? "start" : "end"; })
+					.text(function(d){
+						return d.name;
+					});
+
+				nodesT = nodes;
+				linksT = links;
+
+
+				var tooltip = d3.select('#bundleLayout')
+					.append('div')
+					.attr('class', 'tooltip')
+					.style('opacity', 0.0);
+
+				node.on('mouseover', function(d){
+					if(d.GPS){
+						tooltip.html('GPS: ' + d.GPS)
+							.style('left', (d3.event.pageX) + 'px')
+							.style('top', (d3.event.pageY + 20) + 'px')
+							.style('opacity', 1.0);
+						
+						link.classed('linkHover', function(l){
+							if(l[0].name == d.name){
+								return true;	
+							}
+						});
+					}
+					else if(d.gamesCount){
+						tooltip.html('games count: ' + d.gamesCount)
+							.style('left', (d3.event.pageX) + 'px')
+							.style('top', (d3.event.pageY + 20) + 'px')
+							.style('opacity', 1.0);
+						link.classed('linkHover', function(l){
+							if(l[2].name == d.name){
+								return true;	
+							}
+						})
+						;
+					};
+				})
+
+				.on('mousemove', function(d){
+					tooltip.style('left', (d3.event.pageX) + 'px')
+						.style('top', (d3.event.pageY + 20) + 'px')					
+				})
+				.on('mouseout', function(d){
+					tooltip.style('opacity', 0.0);
+
+					link.classed('linkHover', false);
+					link.classed('link', true);
+				})
+
+				var colorTip = svg.selectAll('.tipSquare')
+					.data(colorTipJson)
+					.enter()
+					.append('g')
+					.attr('class','colorTip');
+
+				var tipSquare = colorTip.append('rect')
+				   .attr("class", "rectangles")
+				   .attr("x", function(d){return d.x;})
+				   .attr("y", function(d){return d.y;})
+				   .attr("width", function(d){return d.width;})
+				   .attr("height", function(d){return d.height;})
+				   .style('fill', function(d){return d.fill});
+
+				var tipNote = colorTip.append('text')
+					.attr('dy', '.2em')
+					.attr('class', 'text')
+					.attr('transform', function(d){
+						return 'translate(' + (d.x + 35) + ', ' + (d.y + 7.5)+ ')' //move the text to the right and downward a bit
+					})
+					.text(function(d){
+						return d.text;
+					});
+
+				var lightnessTip = svg.selectAll('.tipLightness')
+					.data(lightnessTipJson)
+					.enter()
+					.append('g')
+					.attr('class','tipLightness');
+
+				var lightnessSquare = lightnessTip.append('rect')
+				   .attr("class", "rectangles")
+				   .attr("x", function(d){return d.x;})
+				   .attr("y", function(d){return d.y;})
+				   .attr("width", function(d){return d.width;})
+				   .attr("height", function(d){return d.height;})
+				   .style('fill', function(d){
+						return 'hsla(240, 100%, ' + (144 - d.GPS) + '%, 0.9)'; // blue, 240, 100, 44
+				    });
+
+				var lightnessNote = lightnessTip.append('text')
+					.attr('dy', '.2em')
+					.attr('class', 'text')
+					.attr("text-anchor", function(d) { return d.GPS < 60 ? "start" : "end"; })
+					.attr('transform', function(d){
+						return 'translate(' + (d.x + 22) + ', ' + (d.y - 10)+ ')' //move the text to the right and downward a bit
+					})
+					.text(function(d){
+						return d.GPS;
+					});
+
+			});
+		});
+
+	</script>
+</body>
+</html>
+
+
